@@ -9,13 +9,43 @@ const songs = [
   { id: "9bZkp7q19f0", title: "PSY - Gangnam Style" },
 ];
 
-async function getYoutubeViews(videoId) {
+async function getVideoData(videoId) {
   const apiKey = import.meta.env.VITE_YOUTUBE_API_KEY;
-  const res = await fetch(
-    `https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${videoId}&key=${apiKey}`
-  );
+  const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${videoId}&key=${apiKey}`;
+
+  const res = await fetch(url);
   const data = await res.json();
-  return parseInt(data.items[0].statistics.viewCount, 10);
+
+  if (!data.items.length) return null;
+
+  const video = data.items[0];
+
+  return {
+    id: videoId,
+    title: video.snippet.title,
+    thumbnail: video.snippet.thumbnails.high.url,
+    publishedAt: video.snippet.publishedAt,
+    views: parseInt(video.statistics.viewCount, 10),
+  };
+}
+
+function VideoCard({ video, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex-1 bg-white shadow-md rounded-xl p-4 m-2 hover:scale-105 transition"
+    >
+      <img
+        src={video.thumbnail}
+        alt={video.title}
+        className="rounded-lg mb-2 w-full"
+      />
+      <h3 className="font-bold text-lg">{video.title}</h3>
+      <p className="text-gray-600 text-sm">
+        Publicado: {new Date(video.publishedAt).toLocaleDateString()}
+      </p>
+    </button>
+  );
 }
 
 export default function Game() {
@@ -26,14 +56,9 @@ export default function Game() {
 
   async function startGame() {
     const randomPair = songs.sort(() => 0.5 - Math.random()).slice(0, 2);
-    const views = await Promise.all(
-      randomPair.map((song) => getYoutubeViews(song.id))
-    );
+    const videos = await Promise.all(randomPair.map((s) => getVideoData(s.id)));
 
-    setPair([
-      { ...randomPair[0], views: views[0] },
-      { ...randomPair[1], views: views[1] },
-    ]);
+    setPair(videos);
     setScore(0);
     setGameOver(false);
     setMessage("");
@@ -51,14 +76,18 @@ export default function Game() {
       const loser = a.views < b.views ? a : b;
 
       setMessage(
-        `✅ ¡Acertaste! "${winner.title}" tiene ${winner.views.toLocaleString()} reproducciones vs ${loser.views.toLocaleString()}`
+        `✅ ¡Acertaste! "${winner.title}" tiene ${winner.views.toLocaleString()} vs ${loser.views.toLocaleString()}`
       );
 
-      // nuevo retador
-      const challenger = songs[Math.floor(Math.random() * songs.length)];
-      const challengerViews = await getYoutubeViews(challenger.id);
+      // Buscar un retador distinto al ganador
+      let challenger;
+      do {
+        challenger = songs[Math.floor(Math.random() * songs.length)];
+      } while (challenger.id === winner.id);
 
-      setPair([winner, { ...challenger, views: challengerViews }]);
+      const challengerData = await getVideoData(challenger.id);
+
+      setPair([winner, challengerData]);
     } else {
       setGameOver(true);
       const winner = a.views >= b.views ? a : b;
@@ -71,7 +100,10 @@ export default function Game() {
   }
 
   return (
-    <div className="h-screen flex flex-col text-center">
+    <div className="h-screen flex flex-col text-center p-4">
+      {/* Puntaje siempre visible */}
+      <div className="text-lg font-bold mb-2">Puntaje: {score}</div>
+
       {!pair.length && !gameOver && (
         <button
           onClick={startGame}
@@ -83,14 +115,12 @@ export default function Game() {
 
       {pair.length > 0 && !gameOver && (
         <div className="flex flex-1">
-          {pair.map((song) => (
-            <button
-              key={song.id}
-              onClick={() => choose(song)}
-              className="flex-1 flex items-center justify-center text-2xl font-bold bg-gray-200 hover:bg-gray-300 p-4"
-            >
-              {song.title}
-            </button>
+          {pair.map((video) => (
+            <VideoCard
+              key={video.id}
+              video={video}
+              onClick={() => choose(video)}
+            />
           ))}
         </div>
       )}
@@ -108,10 +138,6 @@ export default function Game() {
             Jugar de nuevo
           </button>
         </div>
-      )}
-
-      {!gameOver && pair.length > 0 && (
-        <div className="p-4 text-lg font-bold">Puntaje: {score}</div>
       )}
     </div>
   );
